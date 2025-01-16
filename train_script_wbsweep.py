@@ -143,7 +143,7 @@ if __name__ == "__main__":
     sweep_config["parameters"]["vocab_size"]["value"] = int(vocab_size)
 
     # Initialize sweep
-    sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-local")
+    sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-remote")
 
     # Start the sweep
     wandb.agent(sweep_id, function=train_func, count=100)  # 50 iterations as in original
