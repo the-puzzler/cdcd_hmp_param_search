@@ -218,12 +218,7 @@ def validate_epoch(model, test_loader, device, epoch):
     
 #     return metrics.best_val_loss, final_val_loss
 
-#for ray tune
-import ray
-from ray import tune
-from ray.tune.schedulers import ASHAScheduler
-from ray.tune.search.optuna import OptunaSearch
-
+#no model saving
 def train_and_validate(model, train_loader, test_loader, optimizer, num_epochs, device, run_name, use_lr_scheduling=True):
     metrics = TrainingMetrics(run_name)
     
@@ -239,16 +234,15 @@ def train_and_validate(model, train_loader, test_loader, optimizer, num_epochs, 
         # Training phase
         avg_train_loss = train_epoch(model, train_loader, optimizer, device, epoch)
         
-        # Log to both Wandb and Ray Tune
+        # Log to Wandb
         wandb.log({'train/epoch_loss': avg_train_loss, 'epoch': epoch})
         
-         
-        # Validation phase (every epoch as raytune will use this.)
+        # Validation phase (every epoch)
         if epoch % 1 == 0:
             avg_val_loss = validate_epoch(model, test_loader, device, epoch)
             final_val_loss = avg_val_loss
             
-            # Log to both Wandb and Ray Tune
+            # Log to Wandb
             wandb.log({
                 'val/epoch_loss': avg_val_loss,
                 'epoch': epoch
@@ -258,15 +252,15 @@ def train_and_validate(model, train_loader, test_loader, optimizer, num_epochs, 
                 scheduler.step(avg_val_loss)
             
             if metrics.update_best_metrics(avg_val_loss):
-                best_model_path = save_checkpoint(
-                    model, optimizer, scheduler, epoch, 
-                    avg_train_loss, avg_val_loss, run_name, is_final=False
-                )
+                # best_model_path = save_checkpoint(
+                #     model, optimizer, scheduler, epoch, 
+                #     avg_train_loss, avg_val_loss, run_name, is_final=False
+                # )
                 wandb.log({
                     'best_model/val_loss': avg_val_loss,
                     'best_model/train_loss': avg_train_loss,
                     'best_model/epoch': epoch,
-                    'best_model/path': best_model_path
+                    
                 })
     
     return metrics.best_val_loss, final_val_loss
