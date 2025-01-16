@@ -16,18 +16,23 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import wandb
 
+# Define project constants
+WANDB_PROJECT = "cdcd-hmp-param-search-remote"  # Your project name
+WANDB_ENTITY = "matteopeluso1922"  # Your W&B username/entity
+
+
 #local imports
 from model_arch import CategoricalScoreDiffusion
 from otu_dataset import OTUDataset
 from train_funcs import train_and_validate
 
 
-
-
-
 def train_func():
     # Initialize wandb for this run
-    run = wandb.init()
+    run = wandb.init(
+        project=WANDB_PROJECT,
+        entity=WANDB_ENTITY
+    )
     
     # Get hyperparameters from wandb
     config = wandb.config
@@ -83,19 +88,20 @@ def train_func():
     del model
     torch.cuda.empty_cache()
 
-if __name__ == "__main__":
+def setup_new_sweep():
+    """Create and initialize a new sweep, returning the sweep ID."""
     # Define sweep configuration
     sweep_config = {
-        "method": "bayes",  # Using Bayesian optimization
+        "method": "bayes",
         "metric": {
             "name": "best_val_loss",
             "goal": "minimize"
         },
         "parameters": {
-            "head_dim": {  # dimension per attention head
-            "distribution": "int_uniform",
-            "min": 4,
-            "max": 16
+            "head_dim": {
+                "distribution": "int_uniform",
+                "min": 4,
+                "max": 16
             },
             "num_heads": {
                 "distribution": "int_uniform",
@@ -105,12 +111,11 @@ if __name__ == "__main__":
             "num_layers": {
                 "distribution": "int_uniform",
                 "min": 1,
-                "max": 6
+                "max": 10
             },
-         
             "dim_feedforward": {
                 "distribution": "int_uniform",
-                "min": 16,
+                "min": 8,
                 "max": 64
             },
             "num_fourier": {
@@ -129,10 +134,10 @@ if __name__ == "__main__":
                 "max": 32
             },
             "num_epochs": {
-                "value": 15
+                "value": 20
             },
             "vocab_size": {
-                "value": None  # Will be set after loading data
+                "value": None
             }
         }
     }
@@ -143,7 +148,36 @@ if __name__ == "__main__":
     sweep_config["parameters"]["vocab_size"]["value"] = int(vocab_size)
 
     # Initialize sweep
-    sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-remote")
+    sweep_id = wandb.sweep(
+        sweep_config,
+        project=WANDB_PROJECT,
+        entity=WANDB_ENTITY
+    )
+    print(f"SWEEP_ID_START:{sweep_id}:SWEEP_ID_END")
+    return sweep_id
 
-    # Start the sweep
-    wandb.agent(sweep_id, function=train_func, count=100)  # 50 iterations as in original
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Run W&B sweep agent')
+    parser.add_argument('--sweep_id', type=str, help='Existing sweep ID to continue', default=None)
+    parser.add_argument('--count', type=int, help='Number of runs for this agent', default=500)
+    parser.add_argument('--create_only', action='store_true', help='Only create sweep, don\'t run agent')
+    args = parser.parse_args()
+
+    # Initialize wandb
+    wandb.login()
+
+    if args.sweep_id:
+        sweep_id = args.sweep_id
+    else:
+        sweep_id = setup_new_sweep()
+        if args.create_only:
+            exit(0)
+    
+    # Start the agent with explicit project and entity
+    wandb.agent(
+        sweep_id,
+        function=train_func,
+        count=args.count,
+        project=WANDB_PROJECT,
+        entity=WANDB_ENTITY
+    )
