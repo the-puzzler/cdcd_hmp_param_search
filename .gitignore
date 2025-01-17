@@ -1,3 +1,4 @@
 models/
 wandb/
 __pycache__
+wandb_sweep.log

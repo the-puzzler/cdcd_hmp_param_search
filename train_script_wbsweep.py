@@ -28,6 +28,7 @@ from train_funcs import train_and_validate
 def train_func():
     # Initialize wandb for this run
     run = wandb.init()
+    #
     
     # Get hyperparameters from wandb
     config = wandb.config
@@ -143,7 +144,7 @@ if __name__ == "__main__":
     sweep_config["parameters"]["vocab_size"]["value"] = int(vocab_size)
 
     # Initialize sweep
-    sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-local")
-
+    #sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-local")
+    sweep_id = 'iyof9q52'
     # Start the sweep
-    wandb.agent(sweep_id, function=train_func, count=100)  # 50 iterations as in original
+    wandb.agent(sweep_id,project="cdcd-hmp-param-search-local",entity="matteopeluso1922", function=train_func, count=100)  # pass project and entity when using an existing sweep id.
