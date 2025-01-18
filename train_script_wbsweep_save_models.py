@@ -178,7 +178,7 @@ def train_func():
 if __name__ == "__main__":
     # Define sweep configuration
     sweep_config = {
-        "method": "random",  # Using Bayesian optimization, 'bayes' or random with 'random'
+        "method": "bayes",  # Using Bayesian optimization, 'bayes' or random with 'random'
         "metric": {
             "name": "best_val_loss",
             "goal": "minimize"
@@ -221,7 +221,7 @@ if __name__ == "__main__":
                 "max": 32
             },
             "num_epochs": {
-                "value": 10
+                "value": 15
             },
             "vocab_size": {
                 "value": None  # Will be set after loading data
@@ -235,7 +235,7 @@ if __name__ == "__main__":
     sweep_config["parameters"]["vocab_size"]["value"] = int(vocab_size)
 
     # Initialize sweep
-    sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-orion")
-    #sweep_id = 'qik6r3uo' #if you want to continue a sweep uncomment this and comment the above.
+    #sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-orion_batchwarp")
+    sweep_id = 'c0lka5ik' #if you want to continue a sweep uncomment this and comment the above.
     # Start the sweep
-    wandb.agent(sweep_id,project="cdcd-hmp-param-search-orion",entity="matteopeluso1922", function=train_func, count=10_000)  # pass project and entity when using an existing sweep id.
+    wandb.agent(sweep_id,project="cdcd-hmp-param-search-orion_batchwarp",entity="matteopeluso1922", function=train_func, count=10_000)  # pass project and entity when using an existing sweep id.

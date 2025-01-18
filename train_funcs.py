@@ -103,15 +103,12 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
     train_loss = 0
     num_batches = len(train_loader)
     
-    train_bar = tqdm(train_loader, desc=f'Training Epoch {epoch}')
-    
-    for batch_idx, (tokens, mask) in enumerate(train_bar):
+    for batch_idx, (tokens, mask) in enumerate(train_loader):
         tokens = tokens.to(device)
         mask = mask.to(device)
         
         loss = train_step(model, tokens, mask, optimizer, device)
         train_loss += loss
-        train_bar.set_postfix({'loss': f'{loss:.4f}'})
         
         log_metrics({
             'train/batch_loss': loss,
