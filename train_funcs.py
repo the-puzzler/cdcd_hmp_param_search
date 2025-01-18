@@ -21,24 +21,12 @@ class TrainingMetrics:
 def train_step(model, tokens, mask, optimizer, device):
     optimizer.zero_grad()
     
-    # Sample time using warping
     t = model.sample_time(tokens.shape[0], tokens.device)
-
-    # Get clean embeddings
     x0 = model.embedding(tokens)
-  
-    
-    # Add noise
     noise = model.get_noise(x0, t)
-
     xt = x0 + noise
-
-    
-    # Get model predictions
     logits = model(xt, mask, t)
-
     
-    # Compute loss
     loss = F.cross_entropy(
         logits.view(-1, logits.size(-1)),
         tokens.view(-1),
@@ -46,7 +34,8 @@ def train_step(model, tokens, mask, optimizer, device):
     )
 
     if not torch.isnan(loss):
-        model.update_time_warping(t, loss.detach())
+        # Just collect statistics instead of updating
+        model.collect_time_statistics(t, loss.detach())
         loss.backward()
         optimizer.step()
     
@@ -110,6 +99,10 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
     train_loss = 0
     num_batches = len(train_loader)
     
+    # Reset statistics at start of epoch
+    model.epoch_loss_history.zero_()
+    model.epoch_count_history.zero_()
+    
     for batch_idx, (tokens, mask) in enumerate(train_loader):
         tokens = tokens.to(device)
         mask = mask.to(device)
@@ -117,7 +110,6 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
         loss = train_step(model, tokens, mask, optimizer, device)
         train_loss += loss
         
-        # Print progress every few batches (adjust interval as needed)
         if (batch_idx + 1) % 10 == 0:
             print(f'Epoch {epoch}: [{batch_idx + 1}/{num_batches}] Loss: {loss:.4f}')
             
@@ -127,6 +119,9 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
             'epoch': epoch,
             'batch': batch_idx
         })
+    
+    # Update time warping at end of epoch
+    model.update_time_warping_epoch()
     
     return train_loss / num_batches
 
@@ -154,69 +149,6 @@ def validate_epoch(model, test_loader, device, epoch):
     return val_loss / num_batches
 
 
-
-# def train_and_validate(model, train_loader, test_loader, optimizer, num_epochs, device, run_name, use_lr_scheduling=True):
-#     metrics = TrainingMetrics(run_name)
-    
-#     scheduler = None
-#     if use_lr_scheduling:
-#         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-#             optimizer, mode='min', patience=3, factor=0.5, verbose=True
-#         )
-    
-#     final_val_loss = None
-    
-#     for epoch in range(num_epochs):
-#         # Training phase
-#         avg_train_loss = train_epoch(model, train_loader, optimizer, device, epoch)
-#         log_metrics({'train/epoch_loss': avg_train_loss, 'epoch': epoch})
-         
-#         # Validation phase (every 5 epochs)
-#         if epoch % 5 == 0:
-#             avg_val_loss = validate_epoch(model, test_loader, device, epoch)
-#             final_val_loss = avg_val_loss  # Keep track of last validation loss
-            
-#             log_metrics({
-#                 'val/epoch_loss': avg_val_loss,
-#                 'epoch': epoch
-#             })
-            
-#             # print(f'\nEpoch {epoch}:')
-#             # print(f'Average Train Loss: {avg_train_loss:.4f}')
-#             # print(f'Average Val Loss: {avg_val_loss:.4f}')
-         
-#             if scheduler:
-#                 scheduler.step(avg_val_loss)
-            
-#             if metrics.update_best_metrics(avg_val_loss):
-#                 best_model_path = save_checkpoint(
-#                     model, optimizer, scheduler, epoch, 
-#                     avg_train_loss, avg_val_loss, run_name, is_final=False
-#                 )
-#                 log_metrics({
-#                     'best_model/val_loss': avg_val_loss,
-#                     'best_model/train_loss': avg_train_loss,
-#                     'best_model/epoch': epoch,
-#                     'best_model/path': best_model_path
-#                 })
-#         else:
-#             # print(f'\nEpoch {epoch}: Average Train Loss: {avg_train_loss:.4f}\n')
-#             pass
-    
-#     # Save final model
-#     if final_val_loss is not None:
-#         final_model_path = save_checkpoint(
-#             model, optimizer, scheduler, num_epochs-1,
-#             avg_train_loss, final_val_loss, run_name, is_final=True
-#         )
-#         log_metrics({
-#             'final_model/val_loss': final_val_loss,
-#             'final_model/train_loss': avg_train_loss,
-#             'final_model/epoch': num_epochs-1,
-#             'final_model/path': final_model_path
-#         })
-    
-#     return metrics.best_val_loss, final_val_loss
 
 #no model saving
 def train_and_validate(model, train_loader, test_loader, optimizer, num_epochs, device, run_name, use_lr_scheduling=True):
@@ -252,10 +184,7 @@ def train_and_validate(model, train_loader, test_loader, optimizer, num_epochs, 
                 scheduler.step(avg_val_loss)
             
             if metrics.update_best_metrics(avg_val_loss):
-                # best_model_path = save_checkpoint(
-                #     model, optimizer, scheduler, epoch, 
-                #     avg_train_loss, avg_val_loss, run_name, is_final=False
-                # )
+    
                 wandb.log({
                     'best_model/val_loss': avg_val_loss,
                     'best_model/train_loss': avg_train_loss,
