@@ -1,3 +1,5 @@
 models/
 wandb/
 __pycache__
+model_checkpoints
+sweep_log.txt

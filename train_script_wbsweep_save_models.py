@@ -118,6 +118,7 @@ def train_func():
     )
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print('Using Device: ', device)
     model = model.to(device)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
@@ -177,7 +178,7 @@ def train_func():
 if __name__ == "__main__":
     # Define sweep configuration
     sweep_config = {
-        "method": "bayes",  # Using Bayesian optimization
+        "method": "random",  # Using Bayesian optimization, 'bayes' or random with 'random'
         "metric": {
             "name": "best_val_loss",
             "goal": "minimize"
@@ -191,12 +192,12 @@ if __name__ == "__main__":
             "num_heads": {
                 "distribution": "int_uniform",
                 "min": 1,
-                "max": 8
+                "max": 16
             },
             "num_layers": {
                 "distribution": "int_uniform",
                 "min": 1,
-                "max": 8
+                "max": 10
             },
          
             "dim_feedforward": {
@@ -234,7 +235,7 @@ if __name__ == "__main__":
     sweep_config["parameters"]["vocab_size"]["value"] = int(vocab_size)
 
     # Initialize sweep
-    #sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-local")
-    sweep_id = 'iyof9q52'
+    sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-orion")
+    #sweep_id = 'qik6r3uo' #if you want to continue a sweep uncomment this and comment the above.
     # Start the sweep
-    wandb.agent(sweep_id,project="cdcd-hmp-param-search-local",entity="matteopeluso1922", function=train_func, count=100)  # pass project and entity when using an existing sweep id.
+    wandb.agent(sweep_id,project="cdcd-hmp-param-search-orion",entity="matteopeluso1922", function=train_func, count=10_000)  # pass project and entity when using an existing sweep id.
