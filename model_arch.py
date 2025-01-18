@@ -151,12 +151,27 @@ class CategoricalScoreDiffusion(nn.Module):
         self.epoch_loss_history.index_add_(0, segment_idx, batch_losses)
         self.epoch_count_history.index_add_(0, segment_idx, torch.ones_like(t))
 
-
+    def update_time_warping_batch(self):
+        """Update time warping weights using most recent batch statistics"""
+        # Compute average loss per segment
+        avg_loss = self.epoch_loss_history / (self.epoch_count_history + 1e-8)
+        
+        # Update weights
+        self.time_weights.copy_(torch.log(avg_loss + 1e-8))
+        
+        # Invalidate cache since weights changed
+        self.invalidate_time_cache()
+        
+        # Reset statistics for next batch
+        self.epoch_loss_history.zero_()
+        self.epoch_count_history.zero_()
 
 class NormalizedEmbedding(nn.Module):
     def __init__(self, num_embeddings, embedding_dim):
         super().__init__()
         self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        # Initialize with σ = 0.001 as per paper, may need to be considered as a hyper parameter
+        nn.init.normal_(self.embedding.weight, std=0.001)
     
     def get_normalized_weight(self):
         """Get L2 normalized embedding weights"""

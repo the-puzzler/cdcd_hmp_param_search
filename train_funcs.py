@@ -18,28 +18,7 @@ class TrainingMetrics:
             improved = True
         return improved
 
-def train_step(model, tokens, mask, optimizer, device):
-    optimizer.zero_grad()
-    
-    t = model.sample_time(tokens.shape[0], tokens.device)
-    x0 = model.embedding(tokens)
-    noise = model.get_noise(x0, t)
-    xt = x0 + noise
-    logits = model(xt, mask, t)
-    
-    loss = F.cross_entropy(
-        logits.view(-1, logits.size(-1)),
-        tokens.view(-1),
-        ignore_index=0
-    )
 
-    if not torch.isnan(loss):
-        # Just collect statistics instead of updating
-        model.collect_time_statistics(t, loss.detach())
-        loss.backward()
-        optimizer.step()
-    
-    return loss.item()
 
 def validation_step(model, tokens, mask, device):
     # Sample time using warping
@@ -94,34 +73,52 @@ def save_checkpoint(model, optimizer, scheduler, epoch, train_loss, val_loss, ru
 def log_metrics(metrics_dict, step_type='batch'):
     wandb.log(metrics_dict)
 
+def train_step(model, tokens, mask, optimizer, device):
+    optimizer.zero_grad()
+    
+    t = model.sample_time(tokens.shape[0], tokens.device)
+    x0 = model.embedding(tokens)
+    noise = model.get_noise(x0, t)
+    xt = x0 + noise
+    logits = model(xt, mask, t)
+    
+    loss = F.cross_entropy(
+        logits.view(-1, logits.size(-1)),
+        tokens.view(-1),
+        ignore_index=0
+    )
+
+    if not torch.isnan(loss):
+        # Update time warping statistics and weights immediately
+        model.collect_time_statistics(t, loss.detach())
+        model.update_time_warping_batch()  # New method we'll add
+        loss.backward()
+        optimizer.step()
+    
+    return loss.item()
+
+
 def train_epoch(model, train_loader, optimizer, device, epoch):
     model.train()
     train_loss = 0
     num_batches = len(train_loader)
     
-    # Reset statistics at start of epoch
-    model.epoch_loss_history.zero_()
-    model.epoch_count_history.zero_()
+    train_bar = tqdm(train_loader, desc=f'Training Epoch {epoch}')
     
-    for batch_idx, (tokens, mask) in enumerate(train_loader):
+    for batch_idx, (tokens, mask) in enumerate(train_bar):
         tokens = tokens.to(device)
         mask = mask.to(device)
         
         loss = train_step(model, tokens, mask, optimizer, device)
         train_loss += loss
+        train_bar.set_postfix({'loss': f'{loss:.4f}'})
         
-        if (batch_idx + 1) % 10 == 0:
-            print(f'Epoch {epoch}: [{batch_idx + 1}/{num_batches}] Loss: {loss:.4f}')
-            
         log_metrics({
             'train/batch_loss': loss,
             'train/learning_rate': optimizer.param_groups[0]['lr'],
             'epoch': epoch,
             'batch': batch_idx
         })
-    
-    # Update time warping at end of epoch
-    model.update_time_warping_epoch()
     
     return train_loss / num_batches
 
