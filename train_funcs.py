@@ -21,24 +21,12 @@ class TrainingMetrics:
 def train_step(model, tokens, mask, optimizer, device):
     optimizer.zero_grad()
     
-    # Sample time using warping
     t = model.sample_time(tokens.shape[0], tokens.device)
-
-    # Get clean embeddings
     x0 = model.embedding(tokens)
-  
-    
-    # Add noise
     noise = model.get_noise(x0, t)
-
     xt = x0 + noise
-
-    
-    # Get model predictions
     logits = model(xt, mask, t)
-
     
-    # Compute loss
     loss = F.cross_entropy(
         logits.view(-1, logits.size(-1)),
         tokens.view(-1),
@@ -46,7 +34,8 @@ def train_step(model, tokens, mask, optimizer, device):
     )
 
     if not torch.isnan(loss):
-        model.update_time_warping(t, loss.detach())
+        # Just collect statistics instead of updating
+        model.collect_time_statistics(t, loss.detach())
         loss.backward()
         optimizer.step()
     
@@ -110,6 +99,10 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
     train_loss = 0
     num_batches = len(train_loader)
     
+    # Reset statistics at start of epoch
+    model.epoch_loss_history.zero_()
+    model.epoch_count_history.zero_()
+    
     for batch_idx, (tokens, mask) in enumerate(train_loader):
         tokens = tokens.to(device)
         mask = mask.to(device)
@@ -117,7 +110,6 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
         loss = train_step(model, tokens, mask, optimizer, device)
         train_loss += loss
         
-        # Print progress every few batches (adjust interval as needed)
         if (batch_idx + 1) % 10 == 0:
             print(f'Epoch {epoch}: [{batch_idx + 1}/{num_batches}] Loss: {loss:.4f}')
             
@@ -127,6 +119,9 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
             'epoch': epoch,
             'batch': batch_idx
         })
+    
+    # Update time warping at end of epoch
+    model.update_time_warping_epoch()
     
     return train_loss / num_batches
 

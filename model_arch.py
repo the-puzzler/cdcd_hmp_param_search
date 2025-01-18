@@ -32,8 +32,9 @@ class CategoricalScoreDiffusion(nn.Module):
         # Time warping components
         self.num_segments = num_piecewise_segments
         self.register_buffer('time_weights', torch.ones(num_piecewise_segments))
-        self.register_buffer('loss_history', torch.zeros(num_piecewise_segments))
-        self.register_buffer('count_history', torch.zeros(num_piecewise_segments))
+        self.register_buffer('epoch_loss_history', torch.zeros(num_piecewise_segments))
+        self.register_buffer('epoch_count_history', torch.zeros(num_piecewise_segments))
+    
 
         # Random Fourier Features for time embedding
         self.register_buffer('random_matrix', 
@@ -46,7 +47,8 @@ class CategoricalScoreDiffusion(nn.Module):
             nn.Linear(embed_dim, embed_dim),
             nn.GELU()
         )
-    
+
+        
     def get_fourier_features(self, t):
         """Convert time to random Fourier features"""
         t_proj = t.unsqueeze(-1) @ self.random_matrix  # Project time to higher dimension
@@ -67,7 +69,7 @@ class CategoricalScoreDiffusion(nn.Module):
         # Exclude padding token (index 0)
         probs = torch.softmax(logits, dim=-1)[:, :, 1:]  # Remove pad token probability
         all_embeddings = self.embedding.get_normalized_weight()[1:]  # Remove pad embedding
-        expected_embedding = torch.einsum('bsv,ve->bse', probs, all_embeddings)
+        expected_embedding = probs @ all_embeddings
         return expected_embedding
     
     def sample_time(self, batch_size, device):
@@ -90,46 +92,40 @@ class CategoricalScoreDiffusion(nn.Module):
         return noise
     
     def warp_time(self, u):
-        normalized_weights = F.softmax(self.time_weights, dim=0)
-        cumsum = torch.cumsum(normalized_weights, dim=0)
-   
+        # Cache normalized weights and cumsum if not already cached
+        if not hasattr(self, '_cached_norm_weights'):
+            self._cached_norm_weights = F.softmax(self.time_weights, dim=0)
+            self._cached_cumsum = torch.cumsum(self._cached_norm_weights, dim=0)
+            self._cached_cumsum_padded = torch.cat([torch.zeros(1, device=self._cached_cumsum.device), 
+                                                self._cached_cumsum])
         
-        # Clamp u to avoid edge cases
-        u = torch.clamp(u, 0.0, 0.9999)
- 
-        # Get segment indices and clamp them
-        segment_idx = torch.searchsorted(cumsum, u)
-        segment_idx = torch.clamp(segment_idx, 0, self.num_segments - 1)
+        u = u.clamp(0.0, 0.9999)
+        segment_idx = torch.searchsorted(self._cached_cumsum, u).clamp(0, self.num_segments - 1)
+        t = (segment_idx + (u - self._cached_cumsum_padded[segment_idx]) / 
+            self._cached_norm_weights[segment_idx]) / self.num_segments
+        
+        return t.clamp(0.0, 1.0)
     
-        # Linear interpolation within segment
-        start_t = segment_idx.float() / self.num_segments
-        end_t = (segment_idx.float() + 1) / self.num_segments
+    def invalidate_time_cache(self):
+        if hasattr(self, '_cached_norm_weights'):
+            del self._cached_norm_weights
+            del self._cached_cumsum
+            del self._cached_cumsum_padded
+
+    def update_time_warping_epoch(self):
+        """Update time warping weights using collected statistics"""
+        # Compute average loss per segment
+        avg_loss = self.epoch_loss_history / (self.epoch_count_history + 1e-8)
         
-        # Get previous cumsum values
-        prev_cumsum = torch.zeros_like(u)
-        prev_cumsum = torch.where(segment_idx > 0, 
-                                cumsum[segment_idx - 1], 
-                                prev_cumsum)
-        
-        segment_u = (u - prev_cumsum) / normalized_weights[segment_idx]
-        t = start_t + segment_u * (end_t - start_t)
-        
-        result = torch.clamp(t, 0.0, 1.0)
-    
-        
-        return result
-    
-    def update_time_warping(self, t, loss):
-        """Update time warping statistics based on observed loss"""
-        segment_idx = (t * self.num_segments).long().clamp(0, self.num_segments-1)
-        # Expand loss to match batch size
-        batch_losses = torch.full_like(t, loss.item())
-        self.loss_history.index_add_(0, segment_idx, batch_losses)
-        self.count_history.index_add_(0, segment_idx, torch.ones_like(t))
-        
-        # Update weights to make loss more uniform
-        avg_loss = self.loss_history / (self.count_history + 1e-8)
+        # Update weights
         self.time_weights.copy_(torch.log(avg_loss + 1e-8))
+        
+        # Invalidate cache since weights changed
+        self.invalidate_time_cache()
+        
+        # Reset statistics for next epoch
+        self.epoch_loss_history.zero_()
+        self.epoch_count_history.zero_()
     
     def forward(self, x, mask, t):
         """
@@ -147,6 +143,15 @@ class CategoricalScoreDiffusion(nn.Module):
         logits = logits.masked_fill(mask, float('-inf'))
         
         return logits
+    
+    def collect_time_statistics(self, t, loss):
+        """Collect statistics about loss at different timesteps"""
+        segment_idx = (t * self.num_segments).long().clamp(0, self.num_segments-1)
+        batch_losses = torch.full_like(t, loss.item())
+        self.epoch_loss_history.index_add_(0, segment_idx, batch_losses)
+        self.epoch_count_history.index_add_(0, segment_idx, torch.ones_like(t))
+
+
 
 class NormalizedEmbedding(nn.Module):
     def __init__(self, num_embeddings, embedding_dim):
