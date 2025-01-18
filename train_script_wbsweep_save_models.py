@@ -35,6 +35,10 @@ def train_func():
     
     # Calculate embed_dim as product to ensure validity
     embed_dim = config.head_dim * config.num_heads
+
+    # Create save directory
+    save_dir = "./model_checkpoints"
+    os.makedirs(save_dir, exist_ok=True)
     
     
     # Load data (moved inside function since each sweep run needs its own data)
@@ -75,6 +79,30 @@ def train_func():
         run.name
     )
     
+    # Read current best loss from file
+    loss_file = os.path.join(save_dir, "best_loss.txt")
+    current_best_loss = float('inf')
+    if os.path.exists(loss_file):
+        with open(loss_file, 'r') as f:
+            current_best_loss = float(f.read().strip())
+    
+    # If we found a better model
+    if best_val_loss < current_best_loss:
+        # Save the new best loss
+        with open(loss_file, 'w') as f:
+            f.write(f"{best_val_loss}")
+            
+        # Save model
+        model_path = os.path.join(save_dir, f"best_model_{best_val_loss:.6f}.pt")
+        torch.save(model.state_dict(), model_path)
+        
+        # Save config
+        config_path = os.path.join(save_dir, f"best_config_{best_val_loss:.6f}.txt")
+        with open(config_path, 'w') as f:
+            for key, value in dict(config).items():
+                f.write(f"{key}: {value}\n")
+
+
     # Log the final metrics
     wandb.log({
         "best_val_loss": best_val_loss,

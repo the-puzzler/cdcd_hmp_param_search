@@ -189,10 +189,7 @@ def train_and_validate(model, train_loader, test_loader, optimizer, num_epochs, 
                 scheduler.step(avg_val_loss)
             
             if metrics.update_best_metrics(avg_val_loss):
-                # best_model_path = save_checkpoint(
-                #     model, optimizer, scheduler, epoch, 
-                #     avg_train_loss, avg_val_loss, run_name, is_final=False
-                # )
+    
                 wandb.log({
                     'best_model/val_loss': avg_val_loss,
                     'best_model/train_loss': avg_train_loss,
