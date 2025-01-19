@@ -75,105 +75,126 @@ def safe_write_best_loss(lock_file_path, loss_file_path, loss):
             release_lock(lock_file)
 
 
-
 def train_func():
-    # Initialize wandb for this run
-    run = wandb.init()
-    #
-    
-    # Get hyperparameters from wandb
-    config = wandb.config
-    
-    # Calculate embed_dim as product to ensure validity
-    embed_dim = config.head_dim * config.num_heads
+    try:
+        # Initialize wandb for this run
+        run = wandb.init()
+        
+        # Get hyperparameters from wandb
+        config = wandb.config
+        
+        # Calculate embed_dim as product to ensure validity
+        embed_dim = config.head_dim * config.num_heads
 
-    # Set up paths
-    save_dir = Path("./model_checkpoints")
-    save_dir.mkdir(exist_ok=True)
-    loss_file_path = save_dir / "best_loss.txt"
-    lock_file_path = save_dir / "best_loss.lock"
-    
-    
-    # Load data (moved inside function since each sweep run needs its own data)
-    loaded_df = pd.read_hdf('./data/sample_otu_arrays.h5', key='df')
-    train_idx, test_idx = train_test_split(loaded_df.index, test_size=0.2, random_state=42)
-    train_df = loaded_df.loc[train_idx]
-    test_df = loaded_df.loc[test_idx]
-    
-    train_dataset = OTUDataset(train_df)
-    test_dataset = OTUDataset(test_df)
-    
-    # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False)
-    
-    # Initialize model with config
-    model = CategoricalScoreDiffusion(
-        vocab_size=config.vocab_size,
-        embed_dim=embed_dim, #not from config, from multiplication above to ensure validity by construction
-        num_layers=config.num_layers,
-        num_heads=config.num_heads,
-        dim_feedforward=config.dim_feedforward,
-        num_fourier_features=config.num_fourier
-    )
-    
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print('Using Device: ', device)
-    model = model.to(device)
-    
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
-    
-    best_val_loss, final_val_loss = train_and_validate(
-        model, 
-        train_loader, 
-        test_loader, 
-        optimizer, 
-        config.num_epochs, 
-        device,
-        run.name
-    )
-    
-    # Read current best loss safely
-    current_best_loss = safe_read_best_loss(lock_file_path, loss_file_path)
-    
-    # If we found a better model
-    if best_val_loss < current_best_loss:
-        # Safely write the new best loss
-        safe_write_best_loss(lock_file_path, loss_file_path, best_val_loss)
+        # Set up paths
+        save_dir = Path("./model_checkpoints")
+        save_dir.mkdir(exist_ok=True)
+        loss_file_path = save_dir / "best_loss.txt"
+        lock_file_path = save_dir / "best_loss.lock"
         
-        # Save model to a temporary file first
-        temp_model_path = Path(tempfile.mktemp(suffix='.pt'))
-        torch.save(model.state_dict(), temp_model_path)
+        # Load data
+        loaded_df = pd.read_hdf('./data/sample_otu_arrays.h5', key='df')
+        train_idx, test_idx = train_test_split(loaded_df.index, test_size=0.2, random_state=42)
+        train_df = loaded_df.loc[train_idx]
+        test_df = loaded_df.loc[test_idx]
         
-        # Log model as W&B artifact
-        artifact = wandb.Artifact(
-            name=f'best_model_{run.id}', 
-            type='model',
-            metadata={
-                'val_loss': best_val_loss,
-                'config': dict(config)
-            }
+        train_dataset = OTUDataset(train_df)
+        test_dataset = OTUDataset(test_df)
+        
+        train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+        test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False)
+        
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print('Using Device: ', device)
+        
+        # Initialize model
+        model = CategoricalScoreDiffusion(
+            vocab_size=config.vocab_size,
+            embed_dim=embed_dim,
+            num_layers=config.num_layers,
+            num_heads=config.num_heads,
+            dim_feedforward=config.dim_feedforward,
+            num_fourier_features=config.num_fourier
+        ).to(device)
+        
+        optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
+        
+        best_val_loss, final_val_loss = train_and_validate(
+            model, 
+            train_loader, 
+            test_loader, 
+            optimizer, 
+            config.num_epochs, 
+            device,
+            run.name
         )
-        artifact.add_file(temp_model_path)
-        run.log_artifact(artifact)
         
-        # Clean up temporary file
-        temp_model_path.unlink()
+        # Read current best loss safely
+        current_best_loss = safe_read_best_loss(lock_file_path, loss_file_path)
         
-        # Save config
-        config_path = save_dir / f"best_config_{best_val_loss:.6f}.json"
-        with open(config_path, 'w') as f:
-            json.dump(dict(config), f, indent=4)
+        if best_val_loss < current_best_loss:
+            safe_write_best_loss(lock_file_path, loss_file_path, best_val_loss)
+            
+            temp_model_path = Path(tempfile.mktemp(suffix='.pt'))
+            torch.save(model.state_dict(), temp_model_path)
+            
+            artifact = wandb.Artifact(
+                name=f'best_model_{run.id}', 
+                type='model',
+                metadata={
+                    'val_loss': best_val_loss,
+                    'config': dict(config)
+                }
+            )
+            artifact.add_file(temp_model_path)
+            run.log_artifact(artifact)
+            
+            temp_model_path.unlink()
+            
+            config_path = save_dir / f"best_config_{best_val_loss:.6f}.json"
+            with open(config_path, 'w') as f:
+                json.dump(dict(config), f, indent=4)
 
+        # Log metrics
+        wandb.log({
+            "best_val_loss": best_val_loss,
+            "final_val_loss": final_val_loss
+        })
 
-    # Log the final metrics
-    wandb.log({
-        "best_val_loss": best_val_loss,
-        "final_val_loss": final_val_loss
-    })
-    
-    del model
-    torch.cuda.empty_cache()
+    finally:
+        # Thorough cleanup
+        if 'model' in locals():
+            model.cpu()
+            del model
+        
+        if 'optimizer' in locals():
+            del optimizer
+            
+        if 'train_loader' in locals():
+            del train_loader
+        if 'test_loader' in locals():
+            del test_loader
+            
+        if 'train_dataset' in locals():
+            del train_dataset
+        if 'test_dataset' in locals():
+            del test_dataset
+            
+        if 'train_df' in locals():
+            del train_df
+        if 'test_df' in locals():
+            del test_df
+        if 'loaded_df' in locals():
+            del loaded_df
+            
+        # Clear CUDA cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        
+        # Garbage collection
+        import gc
+        gc.collect()
 
 if __name__ == "__main__":
     # Define sweep configuration
