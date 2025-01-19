@@ -89,14 +89,12 @@ def train_step(model, tokens, mask, optimizer, device):
     )
 
     if not torch.isnan(loss):
-        # Update time warping statistics and weights immediately
+        # Only collect statistics, don't update weights yet
         model.collect_time_statistics(t, loss.detach())
-        model.update_time_warping_batch()  # New method we'll add
         loss.backward()
         optimizer.step()
     
     return loss.item()
-
 
 def train_epoch(model, train_loader, optimizer, device, epoch):
     model.train()
@@ -116,6 +114,9 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
             'epoch': epoch,
             'batch': batch_idx
         })
+    
+    # Update time warping at end of epoch using accumulated statistics
+    model.update_time_warping_epoch()
     
     return train_loss / num_batches
 
