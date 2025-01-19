@@ -256,7 +256,7 @@ if __name__ == "__main__":
     sweep_config["parameters"]["vocab_size"]["value"] = int(vocab_size)
 
     # Initialize sweep
-    sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-orion_epochwarp")
-    #sweep_id = 'c0lka5ik' #if you want to continue a sweep uncomment this and comment the above.
+    #sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-orion_truewarp")
+    sweep_id = 'wdakflvp' #if you want to continue a sweep uncomment this and comment the above.
     # Start the sweep
-    wandb.agent(sweep_id,project="cdcd-hmp-param-search-orion_epochwarp",entity="matteopeluso1922", function=train_func, count=10_000)  # pass project and entity when using an existing sweep id.
+    wandb.agent(sweep_id,project="cdcd-hmp-param-search-orion_truewarp",entity="matteopeluso1922", function=train_func, count=10_000)  # pass project and entity when using an existing sweep id.

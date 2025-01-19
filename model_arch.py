@@ -122,9 +122,10 @@ class CategoricalScoreDiffusion(nn.Module):
         return logits
     
     def sample_time(self, batch_size, device):
-        """Sample timesteps using time warping"""
+        """Sample timesteps using time warping with safety checks"""
         u = torch.rand(batch_size, device=device)
-        return self.time_warping.warp_time(u)
+        t = self.time_warping.warp_time(u)
+        return t.clamp(0.0, 1.0)  # Ensure times are valid
     
     def get_noise(self, embeddings, t):
         """Sample noise n ~ N(0, σt²)"""

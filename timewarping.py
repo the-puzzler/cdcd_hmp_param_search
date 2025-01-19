@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 class TimeWarping(nn.Module):
     def __init__(self, num_bins, t_min=0, t_max=1, ema_decay=0.99):
