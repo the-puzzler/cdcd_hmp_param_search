@@ -72,11 +72,16 @@ def save_checkpoint(model, optimizer, scheduler, epoch, train_loss, val_loss, ru
 
 def log_metrics(metrics_dict, step_type='batch'):
     wandb.log(metrics_dict)
-
+    
 def train_step(model, tokens, mask, optimizer, device):
     optimizer.zero_grad()
     
     t = model.sample_time(tokens.shape[0], tokens.device)
+    
+    # Get bin assignments and importance weights
+    bin_idx = model.time_warping.get_bin_assignment(t)
+    importance_weights = model.time_warping.get_importance_weights(bin_idx)
+    
     x0 = model.embedding(tokens)
     noise = model.get_noise(x0, t)
     xt = x0 + noise
@@ -89,9 +94,12 @@ def train_step(model, tokens, mask, optimizer, device):
     )
 
     if not torch.isnan(loss):
-        # Only collect statistics, don't update weights yet
-        model.collect_time_statistics(t, loss.detach())
-        loss.backward()
+        # Collect statistics for time warping
+        model.time_warping.collect_statistics(t, loss.detach().expand(tokens.shape[0]))
+        
+        # Apply importance weights to loss
+        weighted_loss = loss * importance_weights.mean()
+        weighted_loss.backward()
         optimizer.step()
     
     return loss.item()
@@ -116,7 +124,7 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
         })
     
     # Update time warping at end of epoch using accumulated statistics
-    model.update_time_warping_epoch()
+    model.time_warping.update_warping()
     
     return train_loss / num_batches
 
