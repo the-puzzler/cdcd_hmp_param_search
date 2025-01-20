@@ -1,4 +1,4 @@
-Please see other CDCD for more insight as to what this is about.
+Please see other CDCD for more insight as to what this is about (https://github.com/the-puzzler/cdcd_hmp).
 
-train_script.py is for doing grid search with the multi_tain.sh file
-train_script_ray_tune.py is standalone and uses ray tune to run a parameter search (it uses a modified train_funcs.py)
+
+Currently this is set up to run the sweep file with saving. To run multiple agents, set the sweep ID manually in the file then run as many times as you want agents.
