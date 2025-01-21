@@ -54,6 +54,7 @@ def release_lock(lock_file):
 
 def safe_read_best_loss(lock_file_path, loss_file_path):
     """Safely read the best loss with file locking"""
+    os.makedirs(os.path.dirname(lock_file_path), exist_ok=True)
     with open(lock_file_path, 'w') as lock_file:
         acquire_lock(lock_file)
         try:
@@ -66,6 +67,7 @@ def safe_read_best_loss(lock_file_path, loss_file_path):
 
 def safe_write_best_loss(lock_file_path, loss_file_path, loss):
     """Safely write the best loss with file locking"""
+    os.makedirs(os.path.dirname(lock_file_path), exist_ok=True)
     with open(lock_file_path, 'w') as lock_file:
         acquire_lock(lock_file)
         try:
@@ -206,9 +208,8 @@ if __name__ == "__main__":
         },
         "parameters": {
             "head_dim": {  # dimension per attention head
-            "distribution": "int_uniform",
-            "min": 4,
-            "max": 16
+            "distribution": "categorical",
+            "values": [1, 2, 4,6, 8]
             },
             "num_heads": {
                 "distribution": "int_uniform",
@@ -218,28 +219,26 @@ if __name__ == "__main__":
             "num_layers": {
                 "distribution": "int_uniform",
                 "min": 1,
-                "max": 10
+                "max": 4
             },
          
             "dim_feedforward": {
                 "distribution": "int_uniform",
                 "min": 16,
-                "max": 64
+                "max": 32
             },
             "num_fourier": {
                 "distribution": "int_uniform",
-                "min": 2,
-                "max": 32
+                "min": 4,
+                "max": 24
             },
             "learning_rate": {
                 "distribution": "log_uniform",
-                "min": np.log(1e-5),
-                "max": np.log(1e-1)
+                "min": np.log(1e-4),
+                "max": np.log(1e-2)
             },
             "batch_size": {
-                "distribution": "int_uniform",
-                "min": 4,
-                "max": 32
+                "value": 8
             },
             "num_epochs": {
                 "value": 15
@@ -257,6 +256,6 @@ if __name__ == "__main__":
 
     # Initialize sweep
     #sweep_id = wandb.sweep(sweep_config, project="cdcd-hmp-param-search-orion_truewarp")
-    sweep_id = 'wdakflvp' #if you want to continue a sweep uncomment this and comment the above.
+    sweep_id = 'qkyykfdo' #if you want to continue a sweep uncomment this and comment the above.
     # Start the sweep
     wandb.agent(sweep_id,project="cdcd-hmp-param-search-orion_truewarp",entity="matteopeluso1922", function=train_func, count=10_000)  # pass project and entity when using an existing sweep id.
